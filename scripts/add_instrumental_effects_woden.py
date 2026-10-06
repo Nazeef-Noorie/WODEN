@@ -604,7 +604,7 @@ def visibility_noise_stddev(freq_vec, time_res, freq_res,
     Tsky_vec = 230*(freq_temp_vec/150)**(-2.53)
     
     # Tsky_vec = np.ones(len(freq_vec))*230.0
-
+    Aeff = np.minimum((Aeff*(174*1e6/freq_vec)**(2)), 25) # [m^2]
     # Standard deviation term for the noise:
     sigma = (np.sqrt(2)*kb*(Tsky_vec + Trec)) / (Aeff*np.sqrt(freq_res*time_res*n_obs)) #[Jy]
     
