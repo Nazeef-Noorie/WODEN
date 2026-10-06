@@ -45,6 +45,11 @@ def get_parser():
         help='Add visibility noise via the radiometer equation. '
              'Defaults to MWA-like parameters for reciever '
              'temperature and effective tile area')
+    noise_group.add_argument('--visi_noise_n_obs',
+        default=1, type=int,
+        help='Number of observations being averaged together. The visibility '
+             'noise standard deviation from the radiometer equation is '
+             'divided by sqrt(N). Defaults to 1 (a single observation)')
     
     noise_group.add_argument('--visi_noise_int_time',
         default=False, type=float,
@@ -560,7 +565,7 @@ def add_complex_ant_gains(args : Namespace, uvfits : UVFITS):
     return uvfits
 
 def visibility_noise_stddev(freq_vec, time_res, freq_res,
-                          Trec=50, Aeff=20.35):
+                          Trec=50, Aeff=20.35,n_obs=1):
     """
     For an input set of frequencies, and time in seconds, calculate
     the visibility noise using the radiometer equation. default MWA
@@ -581,12 +586,18 @@ def visibility_noise_stddev(freq_vec, time_res, freq_res,
     Aeff : float
         Effective MWA tile area, default is 20.35 for chan 136. Chan 136
         is the default middle channel for high band obs.
+    n_obs: int
+        Number of observations, default is 1. If you have multiple observations
+        of the same field, you can reduce the noise by sqrt(n_obs).
     Returns
     -------
     sigma : numpy array, float
         $\sigma$ values for each given frequency
     """
     # Boltzmans constant
+    if n_obs < 1:
+        raise ValueError("n_obs must be >= 1")
+    
     kb = k_B.value*1e+26 #[Jy K^-1 m^2]
     freq_temp_vec = freq_vec/1e+6 # [MHz]
     # calculate sky temperature.
@@ -595,7 +606,7 @@ def visibility_noise_stddev(freq_vec, time_res, freq_res,
     # Tsky_vec = np.ones(len(freq_vec))*230.0
 
     # Standard deviation term for the noise:
-    sigma = (np.sqrt(2)*kb*(Tsky_vec + Trec)) / (Aeff*np.sqrt(freq_res*time_res)) #[Jy]
+    sigma = (np.sqrt(2)*kb*(Tsky_vec + Trec)) / (Aeff*np.sqrt(freq_res*time_res*n_obs)) #[Jy]
     
     return sigma
 
@@ -632,8 +643,11 @@ def add_visi_noise(args : Namespace, uvfits : UVFITS):
         freq_res = args.visi_noise_freq_reso
     else:
         freq_res = uvfits.freq_res
-        
-    noise_stddev = visibility_noise_stddev(uvfits.all_freqs, time_res, freq_res)
+
+    n_obs = args.visi_noise_n_obs 
+    if n_obs != 1:
+        print(f"--visi_noise_n_obs was set to {n_obs}, using this to reduce noise by sqrt(n_obs)")
+    noise_stddev = visibility_noise_stddev(uvfits.all_freqs, time_res, freq_res, n_obs=n_obs)
 
     print(f'First freq std dev {noise_stddev[0]:.2e}')
 
@@ -718,7 +732,8 @@ def main(argv=None):
     
     uvfits = UVFITS(args.uvfits)
     
-    if args.add_visi_noise or args.visi_noise_int_time or args.visi_noise_freq_reso:
+    if (args.add_visi_noise or args.visi_noise_int_time
+        or args.visi_noise_freq_reso or args.visi_noise_n_obs != 1):
         
         if args.noise_numpy_seed:
             np.random.seed(args.noise_numpy_seed)
